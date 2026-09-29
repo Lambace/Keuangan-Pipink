@@ -1,28 +1,348 @@
-:root{--g:#0e9f6e;--gd:#0b7d56;--bg:#f4f6f8;--card:#fff;--tx:#1f2937;--mut:#6b7280;--bd:#e5e7eb;--red:#dc2626}
-*{box-sizing:border-box}body{margin:0;font-family:system-ui,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--tx)}
-.hidden{display:none!important}.muted{color:var(--mut);font-size:.85rem}.err{color:var(--red);font-size:.85rem;margin-top:6px}
-.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#0e9f6e,#065f46)}
-.login-card{width:340px;padding:28px;border-radius:14px}.login-card h1{margin:0;color:var(--g)}.login-card label{display:block;margin:12px 0;font-size:.9rem}
-.login-card input{width:100%;padding:9px;border:1px solid var(--bd);border-radius:8px;margin-top:4px}
-#topnav{display:flex;gap:2px;background:#065f46;padding:8px 12px;flex-wrap:wrap;position:sticky;top:0;z-index:9}
-#topnav .brand{color:#fff;font-weight:700;margin-right:10px}#topnav a{color:#c7f0de;padding:7px 11px;border-radius:8px;cursor:pointer;font-size:.88rem;text-decoration:none}
-#topnav a:hover{background:#0b7d56}#topnav a.active{background:var(--g);color:#fff}#topnav .spacer{flex:1}#topnav #whoami{color:#a7d3bf;align-self:center;font-size:.8rem}
-main{padding:18px;max-width:1180px;margin:auto}
-.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:14px}
-.grid{display:grid;gap:12px}.grid.k4{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}.grid.k2{grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
-.stat{padding:14px}.stat b{font-size:1.35rem;display:block}.stat span{color:var(--mut);font-size:.8rem;text-transform:uppercase}
-table{width:100%;border-collapse:collapse;font-size:.88rem}th,td{padding:8px;border-bottom:1px solid var(--bd);text-align:left}
-tr:hover td{background:#f9fafb}.num{text-align:right;font-variant-numeric:tabular-nums}
-.btn{border:1px solid var(--bd);background:#fff;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:.88rem}
-.btn.primary{background:var(--g);color:#fff;border-color:var(--g)}.btn.primary:hover{background:var(--gd)}
-.btn.sm{padding:4px 9px;font-size:.78rem}.btn.danger{color:var(--red);border-color:#fecaca}
-input,select,textarea{padding:8px;border:1px solid var(--bd);border-radius:8px;font:inherit}
-.form-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}.form-row>*{flex:1;min-width:130px}
-.badge{padding:2px 8px;border-radius:99px;font-size:.72rem;background:#d1fae5;color:#065f46}
-.badge.warn{background:#fef3c7;color:#92400e}.badge.red{background:#fee2e2;color:#991b1b}
-#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 18px;border-radius:10px;opacity:0;transition:.3s;pointer-events:none}
-#toast.show{opacity:1}
-.cart-line{display:flex;gap:6px;align-items:center;margin:4px 0}.cart-line input{width:70px}
-h2{margin:4px 0 12px;font-size:1.15rem}h3{margin:10px 0 6px;font-size:.95rem}
-.bar{height:8px;background:var(--bd);border-radius:4px;overflow:hidden}.bar i{display:block;height:100%;background:var(--g)}
-@media print{#topnav,.btn,input,select{display:none!important}}
+/* ==========================================
+   RESET & BASE STYLES
+   ========================================== */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background: #f5f5f5;
+    color: #333;
+    line-height: 1.6;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* ==========================================
+   LOGIN PAGE
+   ========================================== */
+.login-wrap {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.login-card {
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    max-width: 400px;
+}
+
+.login-card h1 {
+    text-align: center;
+    margin-bottom: 0.5rem;
+    font-size: 1.8rem;
+}
+
+.login-card .muted {
+    text-align: center;
+    color: #666;
+    margin-bottom: 1.5rem;
+}
+
+.login-card label {
+    display: block;
+    margin-bottom: 1rem;
+}
+
+.login-card input {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 1rem;
+    margin-top: 0.25rem;
+}
+
+.btn {
+    width: 100%;
+    padding: 0.75rem;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.btn.primary {
+    background: #667eea;
+    color: white;
+}
+
+.btn.primary:hover {
+    background: #5568d3;
+}
+
+.err {
+    color: #e74c3c;
+    margin-top: 1rem;
+    text-align: center;
+    font-size: 0.9rem;
+}
+
+/* ==========================================
+   NAVIGATION
+   ========================================== */
+#topnav {
+    background: #2c3e50;
+    color: white;
+    padding: 1rem 2rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+#topnav .brand {
+    font-weight: bold;
+    font-size: 1.2rem;
+    margin-right: 2rem;
+}
+
+#topnav a {
+    color: #ecf0f1;
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    transition: background 0.3s;
+}
+
+#topnav a:hover {
+    background: #34495e;
+}
+
+#topnav a.active {
+    background: #667eea;
+}
+
+#topnav .spacer {
+    flex: 1;
+}
+
+#topnav #whoami {
+    margin-right: 1rem;
+}
+
+#logoutBtn {
+    cursor: pointer;
+}
+
+/* ==========================================
+   MAIN CONTENT
+   ========================================== */
+main {
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* ==========================================
+   DASHBOARD
+   ========================================== */
+.dashboard h2 {
+    margin-bottom: 1.5rem;
+    color: #2c3e50;
+}
+
+.kartu-ringkasan {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.kartu {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.kartu h3 {
+    font-size: 0.9rem;
+    color: #666;
+    margin-bottom: 0.5rem;
+}
+
+.kartu .angka {
+    font-size: 1.8rem;
+    font-weight: bold;
+    color: #2c3e50;
+}
+
+.kartu .angka.positif {
+    color: #27ae60;
+}
+
+.kartu .angka.negatif {
+    color: #e74c3c;
+}
+
+/* ==========================================
+   KEUANGAN
+   ========================================== */
+.keuangan h2 {
+    margin-bottom: 1.5rem;
+    color: #2c3e50;
+}
+
+.form-transaksi {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 2rem;
+}
+
+.form-transaksi h3 {
+    margin-bottom: 1rem;
+    color: #2c3e50;
+}
+
+.form-group {
+    margin-bottom: 1rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+.form-transaksi .btn {
+    width: auto;
+    padding: 0.75rem 2rem;
+}
+
+.daftar-transaksi h3 {
+    margin: 1.5rem 0 1rem;
+    color: #2c3e50;
+}
+
+.tabel-data {
+    width: 100%;
+    background: white;
+    border-collapse: collapse;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.tabel-data th,
+.tabel-data td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid #ecf0f1;
+}
+
+.tabel-data th {
+    background: #34495e;
+    color: white;
+    font-weight: 600;
+}
+
+.tabel-data tr:hover {
+    background: #f8f9fa;
+}
+
+.tabel-data .positif {
+    color: #27ae60;
+    font-weight: 600;
+}
+
+.tabel-data .negatif {
+    color: #e74c3c;
+    font-weight: 600;
+}
+
+/* ==========================================
+   PLACEHOLDER & LOADING
+   ========================================== */
+.placeholder,
+.loading,
+.error {
+    background: white;
+    padding: 3rem;
+    border-radius: 8px;
+    text-align: center;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.placeholder h2 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+}
+
+.error {
+    color: #e74c3c;
+}
+
+/* ==========================================
+   TOAST NOTIFICATION
+   ========================================== */
+#toast {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    padding: 1rem 1.5rem;
+    border-radius: 4px;
+    color: white;
+    font-weight: 500;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+    display: none;
+    z-index: 1000;
+}
+
+.toast-sukses {
+    background: #27ae60;
+}
+
+.toast-error {
+    background: #e74c3c;
+}
+
+.toast-info {
+    background: #3498db;
+}
+
+/* ==========================================
+   RESPONSIVE
+   ========================================== */
+@media (max-width: 768px) {
+    #topnav {
+        padding: 1rem;
+    }
+
+    #topnav a {
+        padding: 0.5rem;
+        font-size: 0.9rem;
+    }
+
+    main {
+        padding: 1rem;
+    }
+
+    .kartu-ringkasan {
+        grid-template-columns: 1fr;
+    }
+}
