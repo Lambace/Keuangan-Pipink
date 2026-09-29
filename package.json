@@ -1,0 +1,28 @@
+{
+  "name": "pasar-mini",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PASAR MINI - Keuangan, Penjualan, Pembelian, Inventori, Aset, OCR Struk & Analitik Bisnis (PostgreSQL + Redis)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "worker": "node src/worker.js",
+    "migrate": "node src/migrate.js",
+    "seed": "node src/seed.js",
+    "test": "node --test test/"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "express": "^4.19.2",
+    "pg": "^8.12.0",
+    "ioredis": "^5.4.1",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "zod": "^3.23.8",
+    "helmet": "^7.1.0",
+    "cookie-parser": "^1.4.6",
+    "pdfkit": "^0.15.0"
+  }
+}

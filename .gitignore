@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data (file-mode DB & uploads)
+pasar-mini/data/db.json
+pasar-mini/uploads/*
+!pasar-mini/uploads/.gitkeep
+uploads/*
+!uploads/.gitkeep
+
+# Logs
+*.log

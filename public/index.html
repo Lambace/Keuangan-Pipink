@@ -1,0 +1,32 @@
+<!doctype html><html lang="id"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PASAR MINI — Keuangan · Penjualan · Inventori</title>
+<link rel="stylesheet" href="app.css"></head>
+<body>
+<div id="login" class="login-wrap hidden">
+  <form id="loginForm" class="card login-card">
+    <h1>🛒 PASAR MINI</h1><p class="muted">Sistem Keuangan &amp; Bisnis UMKM</p>
+    <label>Email <input name="email" type="email" required value="owner@pasarmini.id"></label>
+    <label>Password <input name="password" type="password" required value=""></label>
+    <button class="btn primary">Masuk</button><div id="loginErr" class="err"></div>
+  </form></div>
+<div id="app" class="hidden">
+  <nav id="topnav">
+    <span class="brand">🛒 PASAR MINI</span>
+    <a data-v="dashboard" class="active">Dashboard</a>
+    <a data-v="pos">Kasir/POS</a>
+    <a data-v="sales">Penjualan</a>
+    <a data-v="purchases">Pembelian</a>
+    <a data-v="products">Produk &amp; Stok</a>
+    <a data-v="receipts">OCR Struk</a>
+    <a data-v="assets">Aset</a>
+    <a data-v="finance">Keuangan</a>
+    <a data-v="reports">Laporan</a>
+    <a data-v="master">Master Data</a>
+    <a data-v="users">Pengguna</a>
+    <span class="spacer"></span><span id="whoami" class="muted"></span><a id="logoutBtn">Keluar</a>
+  </nav>
+  <main id="view"></main>
+</div>
+<div id="toast"></div>
+<script src="app.js"></script></body></html>
