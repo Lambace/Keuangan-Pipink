@@ -1,34 +1,201 @@
-'use strict';
-const ex=require('express'); const getDb=require('../db'); const A=require('../middleware/auth');
-const acc=require('../services/accounting');
-const r=ex.Router(); r.use(A.requireAuth);
+"use strict";
 
-r.get('/accounts',async(req,res,next)=>{try{res.json(await acc.balances(getDb()));}catch(e){next(e);}});
-r.get('/journal',async(req,res,next)=>{try{const db=getDb();
-  let es=await db.all('journal_entries',{orderBy:{id:'desc'}});
-  if(req.query.from) es=es.filter(x=>String(x.date)>=req.query.from);
-  if(req.query.to) es=es.filter(x=>String(x.date)<=req.query.to);
-  for(const e of es) e.lines=await db.all('ledger',{entry_id:e.id});
-  res.json(es.slice(0,500));}catch(e){next(e);}});
+const express = require("express");
+const { z } = require("zod"); // Import Zod untuk validasi data yang ketat
+const dapatkanDb = require("../db");
+const otentikasi = require("../middleware/auth");
+const akuntansi = require("../services/accounting");
 
-r.post('/expenses',async(req,res,next)=>{try{const db=getDb();
-  const b=req.body||{}; if(!(+b.amount>0)||!b.category) return res.status(400).json({error:'category & amount wajib'});
-  return db.tx(async(t)=>{
-    const e=await t.insert('expenses',{date:b.date||new Date().toISOString().slice(0,10),category:b.category,amount:+b.amount,
-      payment_method:b.payment_method||'cash',description:b.description||null,created_by:req.user.id});
-    await acc.post(t,{date:e.date,refType:'expense',refId:e.id,description:'Beban: '+b.category,userId:req.user.id,
-      lines:[{account:'Beban Operasional',debit:+b.amount,credit:0},{account:b.payment_method==='transfer'?'Bank':'Kas',debit:0,credit:+b.amount}]});
-    res.status(201).json(e);});}catch(e){next(e);}});
+const router = express.Router();
 
-r.post('/incomes',async(req,res,next)=>{try{const db=getDb();
-  const b=req.body||{}; if(!(+b.amount>0)||!b.category) return res.status(400).json({error:'category & amount wajib'});
-  return db.tx(async(t)=>{
-    const e=await t.insert('incomes',{date:b.date||new Date().toISOString().slice(0,10),category:b.category,amount:+b.amount,
-      payment_method:b.payment_method||'cash',description:b.description||null,created_by:req.user.id});
-    await acc.post(t,{date:e.date,refType:'income',refId:e.id,description:'Pendapatan lain: '+b.category,userId:req.user.id,
-      lines:[{account:b.payment_method==='transfer'?'Bank':'Kas',debit:+b.amount,credit:0},{account:'Pendapatan Lain',debit:0,credit:+b.amount}]});
-    res.status(201).json(e);});}catch(e){next(e);}});
+// Semua rute di dalam file ini memerlukan autentikasi pengguna
+router.use(otentikasi.requireAuth);
 
-r.get('/expenses',async(req,res,next)=>{try{res.json(await getDb().all('expenses',{orderBy:{id:'desc'}}));}catch(e){next(e);}});
-r.get('/incomes',async(req,res,next)=>{try{res.json(await getDb().all('incomes',{orderBy:{id:'desc'}}));}catch(e){next(e);}});
-module.exports=r;
+// ==========================================
+// SKEMA VALIDASI ZOD
+// ==========================================
+const skemaTransaksiKeuangan = z.object({
+  tanggal: z
+    .string()
+    .optional()
+    .default(() => new Date().toISOString().slice(0, 10)),
+  kategori: z.string().min(1, "Kategori wajib diisi"),
+  jumlah_nominal: z
+    .number({ invalid_type_error: "Jumlah harus berupa angka" })
+    .positive("Jumlah nominal harus lebih dari 0"),
+  metode_pembayaran: z.enum(["cash", "transfer", "lainnya"]).default("cash"),
+  keterangan: z.string().optional().nullable(),
+});
+
+// ==========================================
+// RUTE-RUTE KEUANGAN
+// ==========================================
+
+// 1. Dapatkan daftar saldo semua akun
+router.get("/akun", async (permintaan, respons, berikutnya) => {
+  try {
+    const db = dapatkanDb();
+    const daftarSaldo = await akuntansi.hitungSaldo(db);
+    respons.json(daftarSaldo);
+  } catch (kesalahan) {
+    berikutnya(kesalahan);
+  }
+});
+
+// 2. Dapatkan riwayat jurnal umum (dengan filter tanggal opsional)
+router.get("/jurnal", async (permintaan, respons, berikutnya) => {
+  try {
+    const db = dapatkanDb();
+    let daftarEntri = await db.all("entri_jurnal", { orderBy: { id: "desc" } });
+
+    // Filter berdasarkan rentang tanggal jika parameter diberikan
+    if (permintaan.query.dari) {
+      daftarEntri = daftarEntri.filter(
+        (entri) => String(entri.tanggal) >= permintaan.query.dari,
+      );
+    }
+    if (permintaan.query.sampai) {
+      daftarEntri = daftarEntri.filter(
+        (entri) => String(entri.tanggal) <= permintaan.query.sampai,
+      );
+    }
+
+    // Ambil detail baris jurnal (debit/kredit) untuk setiap entri
+    for (const entri of daftarEntri) {
+      entri.baris_jurnal = await db.all("buku_besar", { id_entri: entri.id });
+    }
+
+    respons.json(daftarEntri.slice(0, 500)); // Batasi 500 entri terbaru agar performa tetap ringan
+  } catch (kesalahan) {
+    berikutnya(kesalahan);
+  }
+});
+
+// 3. Catat Pengeluaran (Beban)
+router.post("/pengeluaran", async (permintaan, respons, berikutnya) => {
+  try {
+    // a. Validasi input menggunakan Zod (akan otomatis menolak jika data tidak sesuai)
+    const dataTervalidasi = skemaTransaksiKeuangan.parse(permintaan.body);
+    const db = dapatkanDb();
+
+    // b. Gunakan transaksi database (rollback otomatis jika ada error di tengah jalan)
+    return db.tx(async (transaksiDb) => {
+      // Simpan data mentah pengeluaran ke tabel
+      const catatanPengeluaran = await transaksiDb.insert("pengeluaran", {
+        tanggal: dataTervalidasi.tanggal,
+        kategori: dataTervalidasi.kategori,
+        jumlah_nominal: dataTervalidasi.jumlah_nominal,
+        metode_pembayaran: dataTervalidasi.metode_pembayaran,
+        keterangan: dataTervalidasi.keterangan || null,
+        dibuat_oleh: permintaan.user.id,
+      });
+
+      // c. Catat ke sistem pembukuan berpasangan (Double-Entry Bookkeeping)
+      await akuntansi.catatJurnal(transaksiDb, {
+        tanggal: catatanPengeluaran.tanggal,
+        jenis_referensi: "pengeluaran",
+        id_referensi: catatanPengeluaran.id,
+        keterangan: `Beban Operasional: ${dataTervalidasi.kategori}`,
+        id_pengguna: permintaan.user.id,
+        baris_jurnal: [
+          // Debit: Menambah beban
+          {
+            akun: "Beban Operasional",
+            debit: dataTervalidasi.jumlah_nominal,
+            kredit: 0,
+          },
+          // Kredit: Mengurangi aset (Kas atau Bank)
+          {
+            akun:
+              dataTervalidasi.metode_pembayaran === "transfer" ? "Bank" : "Kas",
+            debit: 0,
+            kredit: dataTervalidasi.jumlah_nominal,
+          },
+        ],
+      });
+
+      respons.status(201).json(catatanPengeluaran);
+    });
+  } catch (kesalahan) {
+    // Tangani error validasi Zod secara khusus agar respons API rapi
+    if (kesalahan instanceof z.ZodError) {
+      return respons
+        .status(400)
+        .json({ error: "Validasi data gagal", detail: kesalahan.errors });
+    }
+    berikutnya(kesalahan);
+  }
+});
+
+// 4. Catat Pemasukan (Pendapatan Lain)
+router.post("/pemasukan", async (permintaan, respons, berikutnya) => {
+  try {
+    const dataTervalidasi = skemaTransaksiKeuangan.parse(permintaan.body);
+    const db = dapatkanDb();
+
+    return db.tx(async (transaksiDb) => {
+      const catatanPemasukan = await transaksiDb.insert("pemasukan", {
+        tanggal: dataTervalidasi.tanggal,
+        kategori: dataTervalidasi.kategori,
+        jumlah_nominal: dataTervalidasi.jumlah_nominal,
+        metode_pembayaran: dataTervalidasi.metode_pembayaran,
+        keterangan: dataTervalidasi.keterangan || null,
+        dibuat_oleh: permintaan.user.id,
+      });
+
+      await akuntansi.catatJurnal(transaksiDb, {
+        tanggal: catatanPemasukan.tanggal,
+        jenis_referensi: "pemasukan",
+        id_referensi: catatanPemasukan.id,
+        keterangan: `Pendapatan Lain: ${dataTervalidasi.kategori}`,
+        id_pengguna: permintaan.user.id,
+        baris_jurnal: [
+          // Debit: Menambah aset (Kas atau Bank)
+          {
+            akun:
+              dataTervalidasi.metode_pembayaran === "transfer" ? "Bank" : "Kas",
+            debit: dataTervalidasi.jumlah_nominal,
+            kredit: 0,
+          },
+          // Kredit: Menambah pendapatan
+          {
+            akun: "Pendapatan Lain",
+            debit: 0,
+            kredit: dataTervalidasi.jumlah_nominal,
+          },
+        ],
+      });
+
+      respons.status(201).json(catatanPemasukan);
+    });
+  } catch (kesalahan) {
+    if (kesalahan instanceof z.ZodError) {
+      return respons
+        .status(400)
+        .json({ error: "Validasi data gagal", detail: kesalahan.errors });
+    }
+    berikutnya(kesalahan);
+  }
+});
+
+// 5. Dapatkan riwayat pengeluaran
+router.get("/pengeluaran", async (permintaan, respons, berikutnya) => {
+  try {
+    const db = dapatkanDb();
+    respons.json(await db.all("pengeluaran", { orderBy: { id: "desc" } }));
+  } catch (kesalahan) {
+    berikutnya(kesalahan);
+  }
+});
+
+// 6. Dapatkan riwayat pemasukan
+router.get("/pemasukan", async (permintaan, respons, berikutnya) => {
+  try {
+    const db = dapatkanDb();
+    respons.json(await db.all("pemasukan", { orderBy: { id: "desc" } }));
+  } catch (kesalahan) {
+    berikutnya(kesalahan);
+  }
+});
+
+module.exports = router;

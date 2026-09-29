@@ -1,202 +1,171 @@
--- PASAR MINI - Skema PostgreSQL (production-ready)
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-CREATE EXTENSION IF NOT EXISTS citext;
+'use strict';
 
-CREATE TABLE IF NOT EXISTS users (
-  id            BIGSERIAL PRIMARY KEY,
-  name          TEXT NOT NULL,
-  email         CITEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,
-  role          TEXT NOT NULL CHECK (role IN ('owner','admin','staff')) DEFAULT 'staff',
-  active        BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+const express = require('express');
+const { z } = require('zod');
+const dapatkanDb = require('../db');
+const otentikasi = require('../middleware/auth');
+const akuntansi = require('../services/accounting');
 
-CREATE TABLE IF NOT EXISTS categories (
-  id BIGSERIAL PRIMARY KEY, name CITEXT UNIQUE NOT NULL, created_at TIMESTAMPTZ DEFAULT now()
-);
+const router = express.Router();
 
-CREATE TABLE IF NOT EXISTS suppliers (
-  id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, phone TEXT, address TEXT, notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+// Semua rute di sini memerlukan autentikasi
+router.use(otentikasi.requireAuth);
 
-CREATE TABLE IF NOT EXISTS customers (
-  id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, phone TEXT, address TEXT, notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+// ==========================================
+// 1. SKEMA VALIDASI ZOD (Disesuaikan dengan CHECK constraint di DB)
+// ==========================================
+const skemaTransaksiKeuangan = z.object({
+    tanggal: z.string().optional().default(() => new Date().toISOString().slice(0, 10)),
+    kategori: z.string().min(1, 'Kategori wajib diisi'),
+    jumlah_nominal: z.number({ invalid_type_error: 'Jumlah harus berupa angka' }).positive('Jumlah nominal harus lebih dari 0'),
+    // Disesuaikan dengan: CHECK (payment_method IN ('cash','transfer','qris','credit'))
+    metode_pembayaran: z.enum(['cash', 'transfer', 'qris', 'credit']).default('cash'),
+    keterangan: z.string().optional().nullable()
+});
 
-CREATE TABLE IF NOT EXISTS products (
-  id BIGSERIAL PRIMARY KEY,
-  sku CITEXT UNIQUE NOT NULL,
-  name TEXT NOT NULL,
-  category_id BIGINT REFERENCES categories(id),
-  unit TEXT NOT NULL DEFAULT 'pcs',              -- pcs | kg | pack | liter
-  buy_price NUMERIC(14,2) NOT NULL DEFAULT 0,
-  sell_price NUMERIC(14,2) NOT NULL DEFAULT 0,
-  stock NUMERIC(14,3) NOT NULL DEFAULT 0,
-  min_stock NUMERIC(14,3) NOT NULL DEFAULT 0,
-  perishable BOOLEAN NOT NULL DEFAULT FALSE,     -- ayam potong / paket sayur
-  expiry_days INT,
-  is_active BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now()
-);
+// ==========================================
+// 2. RUTE-RUTE KEUANGAN
+// ==========================================
 
-CREATE TABLE IF NOT EXISTS accounts (
-  id BIGSERIAL PRIMARY KEY,
-  name CITEXT UNIQUE NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('cash','bank','receivable','payable','equity','revenue','cogs','expense')),
-  balance NUMERIC(16,2) NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+// A. Dapatkan daftar saldo semua akun
+router.get('/akun', async (permintaan, respons, berikutnya) => {
+    try {
+        const db = dapatkanDb();
+        // Asumsi fungsi di services/accounting sudah menangani pengambilan saldo
+        const daftarSaldo = await akuntansi.hitungSaldo(db); 
+        respons.json(daftarSaldo);
+    } catch (kesalahan) {
+        berikutnya(kesalahan);
+    }
+});
 
-CREATE SEQUENCE IF NOT EXISTS ledger_seq START 1;
+// B. Dapatkan riwayat jurnal umum
+router.get('/jurnal', async (permintaan, respons, berikutnya) => {
+    try {
+        const db = dapatkanDb();
+        let daftarEntri = await db.all('journal_entries', { orderBy: { id: 'desc' } });
+        
+        if (permintaan.query.dari) {
+            daftarEntri = daftarEntri.filter(entri => String(entri.date) >= permintaan.query.dari);
+        }
+        if (permintaan.query.sampai) {
+            daftarEntri = daftarEntri.filter(entri => String(entri.date) <= permintaan.query.sampai);
+        }
 
-CREATE TABLE IF NOT EXISTS journal_entries (
-  id BIGSERIAL PRIMARY KEY,
-  date DATE NOT NULL,
-  ref_type TEXT NOT NULL,       -- sale|purchase|expense|income|asset_buy|asset_sell|depreciation|adjustment|receipt
-  ref_id   BIGINT,
-  description TEXT,
-  created_by BIGINT REFERENCES users(id),
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+        // Ambil detail baris jurnal (debit/kredit) untuk setiap entri
+        for (const entri of daftarEntri) {
+            entri.baris_jurnal = await db.all('ledger', { entry_id: entri.id });
+        }
 
-CREATE TABLE IF NOT EXISTS ledger (
-  id BIGSERIAL PRIMARY KEY,
-  entry_id BIGINT NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
-  account_id BIGINT NOT NULL REFERENCES accounts(id),
-  debit NUMERIC(16,2) NOT NULL DEFAULT 0 CHECK (debit >= 0),
-  credit NUMERIC(16,2) NOT NULL DEFAULT 0 CHECK (credit >= 0),
-  check (debit = 0 OR credit = 0)
-);
-CREATE INDEX IF NOT EXISTS idx_ledger_account ON ledger(account_id);
-CREATE INDEX IF NOT EXISTS idx_ledger_entry ON ledger(entry_id);
-CREATE INDEX IF NOT EXISTS idx_journal_date ON journal_entries(date);
+        respons.json(daftarEntri.slice(0, 500));
+    } catch (kesalahan) {
+        berikutnya(kesalahan);
+    }
+});
 
-CREATE TABLE IF NOT EXISTS sales (
-  id BIGSERIAL PRIMARY KEY,
-  code TEXT UNIQUE NOT NULL,
-  customer_id BIGINT REFERENCES customers(id),
-  date DATE NOT NULL DEFAULT CURRENT_DATE,
-  payment_method TEXT NOT NULL CHECK (payment_method IN ('cash','transfer','qris','credit')),
-  status TEXT NOT NULL DEFAULT 'completed' CHECK (status IN ('completed','voided')),
-  subtotal NUMERIC(16,2) NOT NULL DEFAULT 0,
-  discount NUMERIC(16,2) NOT NULL DEFAULT 0,
-  tax NUMERIC(16,2) NOT NULL DEFAULT 0,
-  total NUMERIC(16,2) NOT NULL DEFAULT 0,
-  paid NUMERIC(16,2) NOT NULL DEFAULT 0,
-  change NUMERIC(16,2) NOT NULL DEFAULT 0,
-  notes TEXT,
-  created_by BIGINT REFERENCES users(id),
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+// C. Catat Pengeluaran (Beban)
+router.post('/pengeluaran', async (permintaan, respons, berikutnya) => {
+    try {
+        // 1. Validasi input
+        const dataTervalidasi = skemaTransaksiKeuangan.parse(permintaan.body);
+        const db = dapatkanDb();
 
-CREATE TABLE IF NOT EXISTS sale_items (
-  id BIGSERIAL PRIMARY KEY,
-  sale_id BIGINT NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
-  product_id BIGINT NOT NULL REFERENCES products(id),
-  qty NUMERIC(14,3) NOT NULL CHECK (qty > 0),
-  unit_price NUMERIC(14,2) NOT NULL,
-  cogs_unit NUMERIC(14,2) NOT NULL DEFAULT 0,
-  discount NUMERIC(14,2) NOT NULL DEFAULT 0,
-  total NUMERIC(16,2) NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_sale_items_product ON sale_items(product_id);
+        // 2. Gunakan transaksi database (rollback otomatis jika gagal)
+        return db.tx(async (transaksiDb) => {
+            // MAPING: Variabel Indonesia -> Kolom Database Inggris
+            const catatanPengeluaran = await transaksiDb.insert('expenses', {
+                date: dataTervalidasi.tanggal,
+                category: dataTervalidasi.kategori,
+                amount: dataTervalidasi.jumlah_nominal,
+                payment_method: dataTervalidasi.metode_pembayaran,
+                description: dataTervalidasi.keterangan || null,
+                created_by: permintaan.user.id
+            });
 
-CREATE TABLE IF NOT EXISTS purchases (
-  id BIGSERIAL PRIMARY KEY,
-  code TEXT UNIQUE NOT NULL,
-  supplier_id BIGINT REFERENCES suppliers(id),
-  date DATE NOT NULL DEFAULT CURRENT_DATE,
-  payment_method TEXT NOT NULL CHECK (payment_method IN ('cash','transfer','credit')),
-  status TEXT NOT NULL DEFAULT 'received' CHECK (status IN ('draft','received','voided')),
-  total NUMERIC(16,2) NOT NULL DEFAULT 0,
-  paid NUMERIC(16,2) NOT NULL DEFAULT 0,
-  notes TEXT,
-  created_by BIGINT REFERENCES users(id),
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+            // 3. Catat ke sistem pembukuan berpasangan (Double-Entry)
+            // Asumsi: fungsi akuntansi.catatJurnal menerima 'nama_akun' dan akan mencari 'account_id' secara internal
+            await akuntansi.catatJurnal(transaksiDb, {
+                date: catatanPengeluaran.date,
+                refType: 'expense',
+                refId: catatanPengeluaran.id,
+                description: `Beban Operasional: ${dataTervalidasi.kategori}`,
+                userId: permintaan.user.id,
+                lines: [
+                    // Debit: Menambah beban
+                    { nama_akun: 'Beban Operasional', debit: dataTervalidasi.jumlah_nominal, kredit: 0 },
+                    // Kredit: Mengurangi aset (Kas atau Bank)
+                    { nama_akun: dataTervalidasi.metode_pembayaran === 'transfer' ? 'Bank' : 'Kas', debit: 0, kredit: dataTervalidasi.jumlah_nominal }
+                ]
+            });
 
-CREATE TABLE IF NOT EXISTS purchase_items (
-  id BIGSERIAL PRIMARY KEY,
-  purchase_id BIGINT NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
-  product_id BIGINT NOT NULL REFERENCES products(id),
-  qty NUMERIC(14,3) NOT NULL CHECK (qty > 0),
-  unit_price NUMERIC(14,2) NOT NULL,
-  total NUMERIC(16,2) NOT NULL
-);
+            respons.status(201).json(catatanPengeluaran);
+        });
+    } catch (kesalahan) {
+        if (kesalahan instanceof z.ZodError) {
+            return respons.status(400).json({ error: 'Validasi data gagal', detail: kesalahan.errors });
+        }
+        berikutnya(kesalahan);
+    }
+});
 
-CREATE TABLE IF NOT EXISTS expenses (
-  id BIGSERIAL PRIMARY KEY,
-  date DATE NOT NULL DEFAULT CURRENT_DATE,
-  category TEXT NOT NULL,
-  amount NUMERIC(16,2) NOT NULL CHECK (amount > 0),
-  payment_method TEXT NOT NULL DEFAULT 'cash',
-  description TEXT,
-  created_by BIGINT REFERENCES users(id),
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+// D. Catat Pemasukan (Pendapatan Lain)
+router.post('/pemasukan', async (permintaan, respons, berikutnya) => {
+    try {
+        const dataTervalidasi = skemaTransaksiKeuangan.parse(permintaan.body);
+        const db = dapatkanDb();
 
-CREATE TABLE IF NOT EXISTS incomes (
-  id BIGSERIAL PRIMARY KEY,
-  date DATE NOT NULL DEFAULT CURRENT_DATE,
-  category TEXT NOT NULL,
-  amount NUMERIC(16,2) NOT NULL CHECK (amount > 0),
-  payment_method TEXT NOT NULL DEFAULT 'cash',
-  description TEXT,
-  created_by BIGINT REFERENCES users(id),
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+        return db.tx(async (transaksiDb) => {
+            const catatanPemasukan = await transaksiDb.insert('incomes', {
+                date: dataTervalidasi.tanggal,
+                category: dataTervalidasi.kategori,
+                amount: dataTervalidasi.jumlah_nominal,
+                payment_method: dataTervalidasi.metode_pembayaran,
+                description: dataTervalidasi.keterangan || null,
+                created_by: permintaan.user.id
+            });
 
-CREATE TABLE IF NOT EXISTS assets (
-  id BIGSERIAL PRIMARY KEY,
-  name TEXT NOT NULL,
-  category TEXT,
-  purchase_date DATE NOT NULL,
-  purchase_price NUMERIC(16,2) NOT NULL,
-  useful_life_months INT NOT NULL DEFAULT 48,
-  salvage_value NUMERIC(16,2) NOT NULL DEFAULT 0,
-  depreciation_method TEXT NOT NULL DEFAULT 'straight_line' CHECK (depreciation_method IN ('straight_line','none')),
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','sold','disposed')),
-  location TEXT, notes TEXT,
-  sold_date DATE, sold_price NUMERIC(16,2),
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+            await akuntansi.catatJurnal(transaksiDb, {
+                date: catatanPemasukan.date,
+                refType: 'income',
+                refId: catatanPemasukan.id,
+                description: `Pendapatan Lain: ${dataTervalidasi.kategori}`,
+                userId: permintaan.user.id,
+                lines: [
+                    // Debit: Menambah aset (Kas atau Bank)
+                    { nama_akun: dataTervalidasi.metode_pembayaran === 'transfer' ? 'Bank' : 'Kas', debit: dataTervalidasi.jumlah_nominal, kredit: 0 },
+                    // Kredit: Menambah pendapatan
+                    { nama_akun: 'Pendapatan Lain', debit: 0, kredit: dataTervalidasi.jumlah_nominal }
+                ]
+            });
 
-CREATE TABLE IF NOT EXISTS stock_movements (
-  id BIGSERIAL PRIMARY KEY,
-  product_id BIGINT NOT NULL REFERENCES products(id),
-  date TIMESTAMPTZ NOT NULL DEFAULT now(),
-  type TEXT NOT NULL,      -- purchase|sale|adjustment|opname|return
-  qty NUMERIC(14,3) NOT NULL,   -- positif masuk, negatif keluar
-  ref_type TEXT, ref_id BIGINT, note TEXT,
-  created_by BIGINT REFERENCES users(id)
-);
+            respons.status(201).json(catatanPemasukan);
+        });
+    } catch (kesalahan) {
+        if (kesalahan instanceof z.ZodError) {
+            return respons.status(400).json({ error: 'Validasi data gagal', detail: kesalahan.errors });
+        }
+        berikutnya(kesalahan);
+    }
+});
 
-CREATE TABLE IF NOT EXISTS receipts (
-  id BIGSERIAL PRIMARY KEY,
-  image_path TEXT,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','processed','confirmed','failed')),
-  engine TEXT,                          -- google_vision | internal
-  raw_text TEXT,
-  parsed JSONB,
-  confidence NUMERIC(5,2),
-  converted_purchase_id BIGINT REFERENCES purchases(id),
-  created_by BIGINT REFERENCES users(id),
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+// E. Dapatkan riwayat pengeluaran
+router.get('/pengeluaran', async (permintaan, respons, berikutnya) => {
+    try {
+        const db = dapatkanDb();
+        respons.json(await db.all('expenses', { orderBy: { id: 'desc' } }));
+    } catch (kesalahan) {
+        berikutnya(kesalahan);
+    }
+});
 
-CREATE TABLE IF NOT EXISTS sessions (
-  jti UUID PRIMARY KEY,
-  user_id BIGINT NOT NULL REFERENCES users(id),
-  created_at TIMESTAMPTZ DEFAULT now(),
-  expires_at TIMESTAMPTZ NOT NULL
-);
+// F. Dapatkan riwayat pemasukan
+router.get('/pemasukan', async (permintaan, respons, berikutnya) => {
+    try {
+        const db = dapatkanDb();
+        respons.json(await db.all('incomes', { orderBy: { id: 'desc' } }));
+    } catch (kesalahan) {
+        berikutnya(kesalahan);
+    }
+});
 
-CREATE TABLE IF NOT EXISTS audit_logs (
-  id BIGSERIAL PRIMARY KEY,
-  user_id BIGINT, action TEXT NOT NULL, entity TEXT NOT NULL, entity_id BIGINT,
-  meta JSONB, created_at TIMESTAMPTZ DEFAULT now()
-);
+module.exports = router;
